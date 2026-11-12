@@ -80,25 +80,31 @@ void main() {
       await tester.tap(find.byKey(const Key('decode-button')));
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.byKey(const Key('show-empty-fields')));
-      await tester.pumpAndSettle();
+      // On this screen the decoded record starts below the fold, so each
+      // control is scrolled to before it is used.
+      Future<void> scrollTo(Finder target) async {
+        await tester.dragUntilVisible(
+          target,
+          find.byType(ListView),
+          const Offset(0, -300),
+          maxIteration: 200,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await scrollTo(find.byKey(const Key('show-empty-fields')));
       await tester.tap(find.byKey(const Key('show-empty-fields')));
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.byKey(const Key('save-button')));
-      await tester.pumpAndSettle();
+      await scrollTo(find.byKey(const Key('save-button')));
       await tester.tap(find.byKey(const Key('save-button')));
       await tester.pumpAndSettle();
 
       final chip = find.byKey(const ValueKey<String>('engine-Gasoline'));
-      await tester.dragUntilVisible(
-        chip,
-        find.byType(ListView),
-        const Offset(0, -300),
-      );
-      await tester.pumpAndSettle();
+      await scrollTo(chip);
       await tester.tap(chip);
       await tester.pumpAndSettle();
+      await scrollTo(find.text('BMW | X3 | 2011 | Gasoline'));
       expect(find.text('BMW | X3 | 2011 | Gasoline'), findsOneWidget);
     });
   }
