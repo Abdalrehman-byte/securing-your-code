@@ -107,4 +107,20 @@ void main() {
     expect(find.text('النتائج: $total'), findsOneWidget);
     expect(find.text('Accord'), findsOneWidget);
   });
+
+  testWidgets('Arabic: the download time keeps its year-month-day order',
+      (tester) async {
+    final app = AppHarness();
+    await app.pump(tester, locale: const Locale('ar'));
+    await app.pickHonda(tester);
+
+    final citation = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('origin-network')).first,
+    );
+    // U+2066 ... U+2069 isolate the timestamp as left-to-right text.
+    expect(
+      citation.data,
+      matches(RegExp('\u2066\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\u2069')),
+    );
+  });
 }

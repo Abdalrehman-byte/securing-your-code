@@ -6,6 +6,10 @@ import '../support/app_harness.dart';
 
 /// Walks through the whole feature on a small phone (360 x 640). Flutter
 /// reports any overflowing layout as an error, which fails the test.
+///
+/// Every `enterText` is followed by a pump: a focused text field scrolls
+/// itself back into view on the next frame, which would undo a scroll made
+/// in the same frame.
 void main() {
   for (final locale in const <Locale>[Locale('en'), Locale('ar')]) {
     testWidgets(
@@ -26,6 +30,7 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('year-field')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('year-field')), '2015');
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('search-button')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('search-button')));
@@ -62,7 +67,9 @@ void main() {
       await tester.tap(find.byKey(const Key('tab-vin')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('vin-field')), '5UXWX7C5*BA');
+      await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('vin-year-field')), '2011');
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('decode-button')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('decode-button')));
@@ -118,6 +125,7 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('year-field')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('year-field')), '1950');
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const Key('search-button')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('search-button')));

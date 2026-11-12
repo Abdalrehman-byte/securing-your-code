@@ -142,15 +142,21 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('search-button')));
         await tester.pumpAndSettle();
+        final scroll = find.byType(CustomScrollView);
         await tester.dragUntilVisible(
-          find.text('Civic'),
-          find.byType(CustomScrollView),
+          find.byKey(const Key('results-count')),
+          scroll,
           const Offset(0, -200),
         );
-        await tester.drag(find.byType(CustomScrollView), const Offset(0, -260));
+        // Bring the citation above the result count into view as well.
+        await tester.drag(scroll, const Offset(0, 130));
         await shot(tester, '${lang}_04_results');
 
-        await tester.ensureVisible(find.text('Accord'));
+        await tester.dragUntilVisible(
+          find.text('Accord'),
+          scroll,
+          const Offset(0, 100),
+        );
         await tester.pumpAndSettle();
         await tester.tap(find.text('Accord'));
         await tester.pumpAndSettle();
@@ -162,14 +168,23 @@ void main() {
         await tester.tap(find.byType(BackButton));
         await tester.pumpAndSettle();
         app.network.online = false;
-        await tester.ensureVisible(find.byKey(const Key('year-field')));
+        await tester.dragUntilVisible(
+          find.byKey(const Key('year-field')),
+          scroll,
+          const Offset(0, 300),
+        );
         await tester.pumpAndSettle();
         await tester.enterText(find.byKey(const Key('year-field')), '2016');
-        await tester.ensureVisible(find.byKey(const Key('search-button')));
+        await tester.pumpAndSettle();
+        await tester.dragUntilVisible(
+          find.byKey(const Key('search-button')),
+          scroll,
+          const Offset(0, -200),
+        );
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('search-button')));
         await tester.pumpAndSettle();
-        await tester.drag(find.byType(CustomScrollView), const Offset(0, -400));
+        await tester.drag(scroll, const Offset(0, -600));
         await shot(tester, '${lang}_07_offline_not_available');
       });
     });

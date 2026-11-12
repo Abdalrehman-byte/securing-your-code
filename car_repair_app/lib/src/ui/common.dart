@@ -131,7 +131,11 @@ class SourceCitation extends StatelessWidget {
                 SourceText(url.toString(), style: small),
                 const SizedBox(height: 2),
                 Text(
-                  '${l10n.fetched}: ${formatTimestamp(fetchedAt)} ($originLabel)',
+                  // The timestamp is wrapped in a left-to-right isolate so
+                  // that Arabic (RTL) text cannot reorder it into what
+                  // would read as day-month-year.
+                  '${l10n.fetched}: \u2066${formatTimestamp(fetchedAt)}\u2069 '
+                  '($originLabel)',
                   key: ValueKey<String>('origin-${origin.name}'),
                   style: small,
                 ),
