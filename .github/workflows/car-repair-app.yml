@@ -8,27 +8,59 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe NHTSA vPIC API reachability
+      - name: Record real NHTSA vPIC responses
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -x
+          mkdir rec && cd rec
           B=https://vpic.nhtsa.dot.gov/api/vehicles
-          for u in \
-            "GetAllMakes?format=json" \
-            "GetMakesForVehicleType/car?format=json" \
-            "GetVehicleTypesForMakeId/474?format=json" \
-            "GetModelsForMakeId/474?format=json" \
-            "GetModelsForMakeIdYear/makeId/474/modelyear/2015?format=json" \
-            "GetModelsForMakeIdYear/makeId/474/modelyear/2015/vehicletype/car?format=json" \
-            "GetModelsForMakeIdYear/makeId/474/modelyear/1950?format=json" \
-            "GetCanadianVehicleSpecifications/?year=2011&make=Acura&model=MDX&units=&format=json" \
-            "DecodeVinValues/5UXWX7C5*BA?format=json&modelyear=2011" \
-            "GetVehicleVariableValuesList/Fuel%20Type%20-%20Primary?format=json" \
-            "GetVehicleVariableValuesList/Engine%20Configuration?format=json" ; do
-            echo "=== $u"
-            curl -sS -m 60 -w '\nHTTP %{http_code} bytes %{size_download}\n' "$B/$u" | cut -c1-1500
+          fetch() { # name url
+            code=$(curl -sS -m 90 -D "$1.headers" -o "$1.json" -w '%{http_code}' "$B/$2" || echo ERR)
+            echo "$1|$B/$2|$code|$(wc -c < "$1.json" 2>/dev/null)|$(date -u +%FT%TZ)" >> index.txt
+          }
+          fetch all_makes "GetAllMakes?format=json"
+          fetch makes_car "GetMakesForVehicleType/car?format=json"
+          fetch vehicle_types_474 "GetVehicleTypesForMakeId/474?format=json"
+          fetch models_474 "GetModelsForMakeId/474?format=json"
+          fetch models_474_2015 "GetModelsForMakeIdYear/makeId/474/modelyear/2015?format=json"
+          fetch models_474_2015_car "GetModelsForMakeIdYear/makeId/474/modelyear/2015/vehicleType/car?format=json"
+          fetch models_474_car "GetModelsForMakeIdYear/makeId/474/vehicleType/car?format=json"
+          fetch models_474_1950 "GetModelsForMakeIdYear/makeId/474/modelyear/1950?format=json"
+          fetch models_474_1990 "GetModelsForMakeIdYear/makeId/474/modelyear/1990?format=json"
+          fetch models_bad_make "GetModelsForMakeIdYear/makeId/99999999/modelyear/2015?format=json"
+          fetch canadian_2011_acura_mdx "GetCanadianVehicleSpecifications/?year=2011&make=Acura&model=MDX&units=&format=json"
+          fetch canadian_2015_honda_accord "GetCanadianVehicleSpecifications/?year=2015&make=Honda&model=Accord&units=&format=json"
+          fetch canadian_2015_honda "GetCanadianVehicleSpecifications/?year=2015&make=Honda&model=&units=&format=json"
+          fetch canadian_none "GetCanadianVehicleSpecifications/?year=2015&make=Honda&model=Zzzz&units=&format=json"
+          fetch decode_values "DecodeVinValues/5UXWX7C5*BA?format=json&modelyear=2011"
+          fetch decode_bad "DecodeVinValues/ABC?format=json"
+          fetch var_fuel "GetVehicleVariableValuesList/Fuel%20Type%20-%20Primary?format=json"
+          fetch var_engine_cfg "GetVehicleVariableValuesList/Engine%20Configuration?format=json"
+          fetch var_list "GetVehicleVariableList?format=json"
+          cat index.txt
+          python3 - <<'PY'
+          import json, glob
+          out = []
+          d = json.load(open('all_makes.json'))
+          out.append('all_makes Count=%s keys=%s first=%s' % (d.get('Count'), list(d.keys()), json.dumps(d['Results'][:3])))
+          for f in sorted(glob.glob('*.headers')):
+              out.append('--- ' + f + '\n' + open(f).read())
+          open('notes.txt', 'w').write('\n'.join(out))
+          PY
+          rm all_makes.json
+          tar czf ../rec.tgz .
+          cd ..
+          base64 -w0 rec.tgz > rec.b64
+          ls -l rec.tgz rec.b64
+          split -b 60000 -d rec.b64 chunk_
+          n=$(ls chunk_* | wc -l)
+          for c in chunk_*; do
+            python3 -c "import json,sys; print(json.dumps({'name':'probe-data-$c-of-$n','head_sha':'$GITHUB_SHA','status':'completed','conclusion':'neutral','output':{'title':'probe data $c','summary':'recorded vPIC responses (tgz+base64 chunk)','text':open('$c').read()}}))" > body.json
+            gh api "repos/$GITHUB_REPOSITORY/check-runs" --input body.json --jq '.id'
           done
