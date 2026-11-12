@@ -1,7 +1,12 @@
 name: Car Repair App (Flutter)
 
+# Runs only when the Flutter app (or this workflow) changes.
 on:
   push:
+    paths:
+      - 'car_repair_app/**'
+      - '.github/workflows/car-repair-app.yml'
+  pull_request:
     paths:
       - 'car_repair_app/**'
       - '.github/workflows/car-repair-app.yml'
@@ -10,57 +15,77 @@ permissions:
   contents: read
   checks: write
 
+defaults:
+  run:
+    shell: bash
+    working-directory: car_repair_app
+
 jobs:
-  bootstrap:
+  test:
+    name: Analyze, offline tests, live vPIC tests
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - name: Helper
+      - name: Versions and dependencies
+        id: setup
         run: |
-          cat > "$RUNNER_TEMP/post.py" <<'PY'
-          import json, subprocess, sys, os, base64
-          name, path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
-          data = open(path, 'rb').read()
-          text = base64.b64encode(data).decode() if mode == 'b64' else data.decode('utf-8', 'replace')
-          size = 60000
-          chunks = [text[i:i+size] for i in range(0, len(text), size)] or ['']
-          for i, c in enumerate(chunks):
-              body = {'name': '%s-%03d-of-%03d' % (name, i, len(chunks)), 'head_sha': os.environ['GITHUB_SHA'],
-                      'status': 'completed', 'conclusion': 'neutral',
-                      'output': {'title': name, 'summary': mode, 'text': c}}
-              open('body.json', 'w').write(json.dumps(body))
-              subprocess.run(['gh', 'api', 'repos/' + os.environ['GITHUB_REPOSITORY'] + '/check-runs', '--input', 'body.json', '--jq', '.id'], check=True)
-          PY
-      - name: Versions, pub get, analyze
-        working-directory: car_repair_app
+          flutter --version 2>&1 | tee "$RUNNER_TEMP/setup.log"
+          flutter pub get 2>&1 | tee -a "$RUNNER_TEMP/setup.log"
+      - name: Static analysis
+        id: analyze
+        if: ${{ !cancelled() }}
+        run: flutter analyze 2>&1 | tee "$RUNNER_TEMP/analyze.log"
+      - name: Offline tests (recorded real vPIC responses)
+        id: offline
+        if: ${{ !cancelled() }}
+        run: flutter test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/offline.log"
+      - name: Live tests (real NHTSA vPIC API)
+        id: live
+        if: ${{ !cancelled() }}
+        run: flutter test test_live --reporter expanded 2>&1 | tee "$RUNNER_TEMP/live.log"
+      - name: Publish test report
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          {
-            flutter --version
-            flutter pub get
-            flutter analyze || true
-          } > "$RUNNER_TEMP/analyze.log" 2>&1 || true
-          tail -c 50000 "$RUNNER_TEMP/analyze.log" > "$RUNNER_TEMP/analyze.tail"
-          python3 "$RUNNER_TEMP/post.py" xfer-analyze "$RUNNER_TEMP/analyze.tail" text
-      - name: Record fixtures from the live vPIC API
-        working-directory: car_repair_app
+          python3 tool/ci_report.py "Car Repair App test report" \
+            "Setup=${{ steps.setup.outcome }}=$RUNNER_TEMP/setup.log" \
+            "Static analysis=${{ steps.analyze.outcome }}=$RUNNER_TEMP/analyze.log" \
+            "Offline tests=${{ steps.offline.outcome }}=$RUNNER_TEMP/offline.log" \
+            "Live vPIC tests=${{ steps.live.outcome }}=$RUNNER_TEMP/live.log"
+
+  android:
+    name: Build Android APK (debug)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build
+        id: build
         run: |
-          dart run tool/record_fixtures.dart "$RUNNER_TEMP/fixtures" > "$RUNNER_TEMP/record.log" 2>&1 || true
-          cat "$RUNNER_TEMP/record.log"
-          python3 "$RUNNER_TEMP/post.py" xfer-record-log "$RUNNER_TEMP/record.log" text
-          tar czf "$RUNNER_TEMP/fixtures.tgz" -C "$RUNNER_TEMP/fixtures" .
-          python3 "$RUNNER_TEMP/post.py" xfer-fixtures "$RUNNER_TEMP/fixtures.tgz" b64
-      - name: Generate platform scaffolding
+          flutter pub get
+          flutter build apk --debug 2>&1 | tee "$RUNNER_TEMP/apk.log"
+          ls -l build/app/outputs/flutter-apk/ | tee -a "$RUNNER_TEMP/apk.log"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: car-repair-app-debug-apk
+          path: car_repair_app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+      - name: Publish build report
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir "$RUNNER_TEMP/scaffold" && cd "$RUNNER_TEMP/scaffold"
-          flutter create --platforms=android,ios --org com.example --project-name car_repair_app car_repair_app > create.log 2>&1 || true
-          tail -30 create.log
-          cd car_repair_app
-          tar czf "$RUNNER_TEMP/scaffold.tgz" android ios .metadata .gitignore pubspec.yaml analysis_options.yaml
-          ls -l "$RUNNER_TEMP/scaffold.tgz"
-          python3 "$RUNNER_TEMP/post.py" xfer-scaffold "$RUNNER_TEMP/scaffold.tgz" b64
+          python3 tool/ci_report.py "Car Repair App Android build report" \
+            "Android debug APK=${{ steps.build.outcome }}=$RUNNER_TEMP/apk.log"

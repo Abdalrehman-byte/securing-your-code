@@ -166,7 +166,7 @@ const Map<String, Map<String, String>> _values = <String, Map<String, String>>{
     'requiresYear': 'A model year is required to query these specifications.',
     'entry': 'Entry {n}',
     'engineSpecs': 'Engine specifications',
-    'vin': 'VIN',
+    'vin': 'VIN (vehicle identification number)',
     'vinHelper': 'Up to 17 characters. Use * for unknown characters.',
     'invalidVin': 'Enter a VIN using letters, digits or *',
     'decode': 'Decode',
