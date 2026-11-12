@@ -20,9 +20,21 @@ class AppHarness {
 
   Fixtures get fixtures => network.fixtures;
 
-  Future<void> pump(WidgetTester tester, {Locale locale = const Locale('en')}) async {
-    // A tall phone-width surface so that lazily built lists are on screen.
-    tester.view.physicalSize = const Size(900, 9000);
+  /// A phone-width surface, tall enough that lazily built lists are on
+  /// screen without scrolling.
+  static const Size tallPhone = Size(390, 9000);
+
+  /// A small phone (360 x 640 logical pixels).
+  static const Size smallPhone = Size(360, 640);
+
+  Future<void> pump(
+    WidgetTester tester, {
+    Locale locale = const Locale('en'),
+    Size size = tallPhone,
+    List<String>? fontFamilyFallback,
+    Key? repaintBoundaryKey,
+  }) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -35,10 +47,14 @@ class AppHarness {
       settings: store,
     );
     await tester.pumpWidget(
-      CarRepairApp(
-        key: UniqueKey(),
-        services: services,
-        initialLocale: locale,
+      RepaintBoundary(
+        key: repaintBoundaryKey,
+        child: CarRepairApp(
+          key: UniqueKey(),
+          services: services,
+          initialLocale: locale,
+          fontFamilyFallback: fontFamilyFallback,
+        ),
       ),
     );
     await tester.pumpAndSettle();

@@ -61,17 +61,15 @@ class Sourced<T> {
 /// and the UI shows "Not available".
 class VpicRepository {
   VpicRepository({
-    required http.Client client,
-    required ResponseCache cache,
+    required this.client,
+    required this.cache,
     this.maxAge = const Duration(days: 7),
     this.timeout = const Duration(seconds: 30),
     DateTime Function()? now,
-  })  : _client = client,
-        _cache = cache,
-        _now = now ?? DateTime.now;
+  }) : _now = now ?? DateTime.now;
 
-  final http.Client _client;
-  final ResponseCache _cache;
+  final http.Client client;
+  final ResponseCache cache;
   final DateTime Function() _now;
 
   final Duration maxAge;
@@ -130,7 +128,7 @@ class VpicRepository {
     Uri url, {
     bool forceRefresh = false,
   }) async {
-    final cached = await _cache.get(url);
+    final cached = await cache.get(url);
     final cachedParsed = cached == null ? null : _tryParse(cached.body);
 
     if (!forceRefresh && cached != null && cachedParsed != null) {
@@ -149,7 +147,7 @@ class VpicRepository {
       final body = await _download(url);
       final parsed = _parse(url, body);
       final fetchedAt = _now();
-      await _cache.put(url, body, fetchedAt);
+      await cache.put(url, body, fetchedAt);
       return Sourced<VpicResponse>(
         data: parsed,
         url: url,
@@ -172,7 +170,7 @@ class VpicRepository {
   Future<String> _download(Uri url) async {
     final http.Response response;
     try {
-      response = await _client.get(
+      response = await client.get(
         url,
         headers: const <String, String>{'Accept': 'application/json'},
       ).timeout(timeout);

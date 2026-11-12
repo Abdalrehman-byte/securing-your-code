@@ -19,6 +19,8 @@ ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
 
 def clean(text):
     text = ANSI.sub('', text.replace('\r\n', '\n'))
+    # Shorten absolute paths to paths inside the app directory.
+    text = text.replace(os.getcwd() + '/', '')
     # Progress lines rewritten with carriage returns: keep the last state.
     return '\n'.join(line.split('\r')[-1] for line in text.split('\n'))
 
@@ -36,13 +38,18 @@ def main():
         sections.append((name, outcome, log))
 
     failed = [name for name, outcome, _ in sections if outcome != 'success']
-    budget = (LIMIT - 2000) // max(1, len(sections))
+    # Keep everything when it fits; otherwise cut the start of the longest logs.
+    budget = LIMIT - 2000
+    lengths = sorted(len(log) for _, _, log in sections)
+    cap = max(lengths) if lengths else 0
+    while sum(min(n, cap) for n in lengths) > budget and cap > 1000:
+        cap -= 500
     lines = ['Commit: ' + os.environ.get('GITHUB_SHA', 'local'), '']
     for name, outcome, _ in sections:
         lines.append('- %s: %s' % (name, outcome.upper()))
     for name, outcome, log in sections:
-        if len(log) > budget:
-            log = '[... earlier output cut ...]\n' + log[-budget:]
+        if len(log) > cap:
+            log = '[... earlier output cut ...]\n' + log[-cap:]
         lines += ['', '## %s: %s' % (name, outcome.upper()), '', '```', log.strip(), '```']
     report = '\n'.join(lines)
 

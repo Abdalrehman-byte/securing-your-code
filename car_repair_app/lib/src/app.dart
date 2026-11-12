@@ -11,12 +11,22 @@ import 'l10n/app_localizations.dart';
 import 'ui/home_screen.dart';
 
 class CarRepairApp extends StatefulWidget {
-  const CarRepairApp({super.key, required this.services, this.initialLocale});
+  const CarRepairApp({
+    super.key,
+    required this.services,
+    this.initialLocale,
+    this.fontFamilyFallback,
+  });
 
   final AppServices services;
 
   /// The saved UI language, or `null` to follow the device language.
   final Locale? initialLocale;
+
+  /// Extra fonts to try for glyphs the default font lacks. Devices fall back
+  /// to their system fonts on their own; this is only set by the screenshot
+  /// renderer, which has no system fonts.
+  final List<String>? fontFamilyFallback;
 
   @override
   State<CarRepairApp> createState() => _CarRepairAppState();
@@ -54,6 +64,7 @@ class _CarRepairAppState extends State<CarRepairApp> {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0B5CAD)),
         useMaterial3: true,
+        fontFamilyFallback: widget.fontFamilyFallback,
       ),
       home: HomeScreen(
         services: widget.services,

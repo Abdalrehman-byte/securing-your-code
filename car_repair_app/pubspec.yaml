@@ -11,8 +11,8 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  material_ui: ^1.1.0
-  cupertino_ui: any
+  material_ui: ^1.11.0
+  cupertino_ui: ^1.1.6
   http: ^1.6.0
   path_provider: ^2.1.6
 

@@ -89,3 +89,60 @@ jobs:
         run: |
           python3 tool/ci_report.py "Car Repair App Android build report" \
             "Android debug APK=${{ steps.build.outcome }}=$RUNNER_TEMP/apk.log"
+
+  screenshots:
+    name: Render screenshots (recorded vPIC data)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Find a font with Arabic glyphs
+        run: |
+          pick() {
+            fc-list :lang=ar file | sed 's/: *$//' | grep -iE '\.(ttf|otf)$' \
+              | grep -iE 'NotoSansArabic|NotoNaskhArabic|DejaVuSans\.ttf|Amiri|Kacst' | sort | head -1
+          }
+          font="$(pick || true)"
+          if [ -z "$font" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-core
+            font="$(pick || true)"
+          fi
+          echo "Arabic font: $font"
+          echo "SCREENSHOT_ARABIC_FONT=$font" >> "$GITHUB_ENV"
+      - name: Render
+        id: render
+        run: |
+          export FLUTTER_ROOT="${FLUTTER_ROOT:-$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")}"
+          flutter pub get
+          flutter test test_screenshots --reporter expanded 2>&1 | tee "$RUNNER_TEMP/screenshots.log"
+          ls -l build/screenshots | tee -a "$RUNNER_TEMP/screenshots.log"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: car-repair-app-screenshots
+          path: car_repair_app/build/screenshots/*.png
+          if-no-files-found: error
+      - name: Publish render report
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 tool/ci_report.py "Car Repair App screenshot report" \
+            "Screenshots=${{ steps.render.outcome }}=$RUNNER_TEMP/screenshots.log"
+      - name: TEMP transfer
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar czf "$RUNNER_TEMP/shots.tgz" -C build/screenshots . || exit 0
+          base64 -w0 "$RUNNER_TEMP/shots.tgz" > shots.b64
+          split -b 60000 -d -a 3 shots.b64 chunk_
+          n=$(ls chunk_* | wc -l)
+          for c in chunk_*; do
+            i=${c#chunk_}
+            python3 -c "import json;print(json.dumps({'name':'xfer-shots-$i-of-$n','head_sha':'$GITHUB_SHA','status':'completed','conclusion':'neutral','output':{'title':'xfer','summary':'b64','text':open('$c').read()}}))" > body.json
+            gh api "repos/$GITHUB_REPOSITORY/check-runs" --input body.json --jq '.id' > /dev/null
+          done
+          rm -f chunk_* shots.b64 body.json
