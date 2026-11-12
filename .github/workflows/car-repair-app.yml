@@ -1,0 +1,34 @@
+name: Car Repair App (Flutter)
+
+on:
+  push:
+    paths:
+      - 'car_repair_app/**'
+      - '.github/workflows/car-repair-app.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe NHTSA vPIC API reachability
+        run: |
+          set -x
+          B=https://vpic.nhtsa.dot.gov/api/vehicles
+          for u in \
+            "GetAllMakes?format=json" \
+            "GetMakesForVehicleType/car?format=json" \
+            "GetVehicleTypesForMakeId/474?format=json" \
+            "GetModelsForMakeId/474?format=json" \
+            "GetModelsForMakeIdYear/makeId/474/modelyear/2015?format=json" \
+            "GetModelsForMakeIdYear/makeId/474/modelyear/2015/vehicletype/car?format=json" \
+            "GetModelsForMakeIdYear/makeId/474/modelyear/1950?format=json" \
+            "GetCanadianVehicleSpecifications/?year=2011&make=Acura&model=MDX&units=&format=json" \
+            "DecodeVinValues/5UXWX7C5*BA?format=json&modelyear=2011" \
+            "GetVehicleVariableValuesList/Fuel%20Type%20-%20Primary?format=json" \
+            "GetVehicleVariableValuesList/Engine%20Configuration?format=json" ; do
+            echo "=== $u"
+            curl -sS -m 60 -w '\nHTTP %{http_code} bytes %{size_download}\n' "$B/$u" | cut -c1-1500
+          done
