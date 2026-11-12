@@ -11,56 +11,56 @@ permissions:
   checks: write
 
 jobs:
-  probe:
+  bootstrap:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Record real NHTSA vPIC responses
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Helper
         run: |
-          mkdir rec && cd rec
-          B=https://vpic.nhtsa.dot.gov/api/vehicles
-          fetch() { # name url
-            code=$(curl -sS -m 90 -D "$1.headers" -o "$1.json" -w '%{http_code}' "$B/$2" || echo ERR)
-            echo "$1|$B/$2|$code|$(wc -c < "$1.json" 2>/dev/null)|$(date -u +%FT%TZ)" >> index.txt
-          }
-          fetch all_makes "GetAllMakes?format=json"
-          fetch makes_car "GetMakesForVehicleType/car?format=json"
-          fetch vehicle_types_474 "GetVehicleTypesForMakeId/474?format=json"
-          fetch models_474 "GetModelsForMakeId/474?format=json"
-          fetch models_474_2015 "GetModelsForMakeIdYear/makeId/474/modelyear/2015?format=json"
-          fetch models_474_2015_car "GetModelsForMakeIdYear/makeId/474/modelyear/2015/vehicleType/car?format=json"
-          fetch models_474_car "GetModelsForMakeIdYear/makeId/474/vehicleType/car?format=json"
-          fetch models_474_1950 "GetModelsForMakeIdYear/makeId/474/modelyear/1950?format=json"
-          fetch models_474_1990 "GetModelsForMakeIdYear/makeId/474/modelyear/1990?format=json"
-          fetch models_bad_make "GetModelsForMakeIdYear/makeId/99999999/modelyear/2015?format=json"
-          fetch canadian_2011_acura_mdx "GetCanadianVehicleSpecifications/?year=2011&make=Acura&model=MDX&units=&format=json"
-          fetch canadian_2015_honda_accord "GetCanadianVehicleSpecifications/?year=2015&make=Honda&model=Accord&units=&format=json"
-          fetch canadian_2015_honda "GetCanadianVehicleSpecifications/?year=2015&make=Honda&model=&units=&format=json"
-          fetch canadian_none "GetCanadianVehicleSpecifications/?year=2015&make=Honda&model=Zzzz&units=&format=json"
-          fetch decode_values "DecodeVinValues/5UXWX7C5*BA?format=json&modelyear=2011"
-          fetch decode_bad "DecodeVinValues/ABC?format=json"
-          fetch var_fuel "GetVehicleVariableValuesList/Fuel%20Type%20-%20Primary?format=json"
-          fetch var_engine_cfg "GetVehicleVariableValuesList/Engine%20Configuration?format=json"
-          fetch var_list "GetVehicleVariableList?format=json"
-          cat index.txt
-          python3 - <<'PY'
-          import json, glob
-          out = []
-          d = json.load(open('all_makes.json'))
-          out.append('all_makes Count=%s keys=%s first=%s' % (d.get('Count'), list(d.keys()), json.dumps(d['Results'][:3])))
-          for f in sorted(glob.glob('*.headers')):
-              out.append('--- ' + f + '\n' + open(f).read())
-          open('notes.txt', 'w').write('\n'.join(out))
+          cat > "$RUNNER_TEMP/post.py" <<'PY'
+          import json, subprocess, sys, os, base64
+          name, path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+          data = open(path, 'rb').read()
+          text = base64.b64encode(data).decode() if mode == 'b64' else data.decode('utf-8', 'replace')
+          size = 60000
+          chunks = [text[i:i+size] for i in range(0, len(text), size)] or ['']
+          for i, c in enumerate(chunks):
+              body = {'name': '%s-%03d-of-%03d' % (name, i, len(chunks)), 'head_sha': os.environ['GITHUB_SHA'],
+                      'status': 'completed', 'conclusion': 'neutral',
+                      'output': {'title': name, 'summary': mode, 'text': c}}
+              open('body.json', 'w').write(json.dumps(body))
+              subprocess.run(['gh', 'api', 'repos/' + os.environ['GITHUB_REPOSITORY'] + '/check-runs', '--input', 'body.json', '--jq', '.id'], check=True)
           PY
-          rm all_makes.json
-          tar czf ../rec.tgz .
-          cd ..
-          base64 -w0 rec.tgz > rec.b64
-          ls -l rec.tgz rec.b64
-          split -b 60000 -d rec.b64 chunk_
-          n=$(ls chunk_* | wc -l)
-          for c in chunk_*; do
-            python3 -c "import json,sys; print(json.dumps({'name':'probe-data-$c-of-$n','head_sha':'$GITHUB_SHA','status':'completed','conclusion':'neutral','output':{'title':'probe data $c','summary':'recorded vPIC responses (tgz+base64 chunk)','text':open('$c').read()}}))" > body.json
-            gh api "repos/$GITHUB_REPOSITORY/check-runs" --input body.json --jq '.id'
-          done
+      - name: Versions, pub get, analyze
+        working-directory: car_repair_app
+        run: |
+          {
+            flutter --version
+            flutter pub get
+            flutter analyze || true
+          } > "$RUNNER_TEMP/analyze.log" 2>&1 || true
+          tail -c 50000 "$RUNNER_TEMP/analyze.log" > "$RUNNER_TEMP/analyze.tail"
+          python3 "$RUNNER_TEMP/post.py" xfer-analyze "$RUNNER_TEMP/analyze.tail" text
+      - name: Record fixtures from the live vPIC API
+        working-directory: car_repair_app
+        run: |
+          dart run tool/record_fixtures.dart "$RUNNER_TEMP/fixtures" > "$RUNNER_TEMP/record.log" 2>&1 || true
+          cat "$RUNNER_TEMP/record.log"
+          python3 "$RUNNER_TEMP/post.py" xfer-record-log "$RUNNER_TEMP/record.log" text
+          tar czf "$RUNNER_TEMP/fixtures.tgz" -C "$RUNNER_TEMP/fixtures" .
+          python3 "$RUNNER_TEMP/post.py" xfer-fixtures "$RUNNER_TEMP/fixtures.tgz" b64
+      - name: Generate platform scaffolding
+        run: |
+          mkdir "$RUNNER_TEMP/scaffold" && cd "$RUNNER_TEMP/scaffold"
+          flutter create --platforms=android,ios --org com.example --project-name car_repair_app car_repair_app > create.log 2>&1 || true
+          tail -30 create.log
+          cd car_repair_app
+          tar czf "$RUNNER_TEMP/scaffold.tgz" android ios .metadata .gitignore pubspec.yaml analysis_options.yaml
+          ls -l "$RUNNER_TEMP/scaffold.tgz"
+          python3 "$RUNNER_TEMP/post.py" xfer-scaffold "$RUNNER_TEMP/scaffold.tgz" b64
