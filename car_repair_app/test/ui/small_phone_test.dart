@@ -45,7 +45,12 @@ void main() {
       await tester.pumpAndSettle();
       final total = app.fixtures.results('models_honda_2015').length;
       expect(
-        tester.widget<Text>(find.byKey(const Key('results-count'))).data,
+        // The count sits just above the first result, scrolled out of view.
+        tester
+            .widget<Text>(
+              find.byKey(const Key('results-count'), skipOffstage: false),
+            )
+            .data,
         contains('$total'),
       );
 
